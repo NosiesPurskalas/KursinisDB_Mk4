@@ -1,7 +1,10 @@
 import tkinter as tk
 from tkinter import filedialog
 from forex_python.converter import CurrencyRates
+from easy_exchange_rates import API
 import csv
+import asyncio
+import aiohttp
 
 common_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'RUB', 'PLN', 'CAD', 'SEK', 'BGN', 'CZK', 'DKK', 'HUF', 'NOK', 'RON']
 
@@ -40,14 +43,17 @@ class CurrencyConverter:
         self.result_label.pack(pady=1)
 
         self.root.mainloop()
-
+ 
     def convert_currency(self):
+        asyncio.run(self.async_convert_currency())
+
+    async def async_convert_currency(self):
         try:
             from_currency = self.from_var.get()
             to_currency = self.to_var.get()
             amount = float(self.amount_entry.get())
 
-            converted_amount = self._perform_conversion(from_currency, to_currency, amount)
+            converted_amount = await self._perform_conversion(from_currency, to_currency, amount)
 
             self.result_label.config(text=f'{amount} {from_currency} = {converted_amount:.2f} {to_currency}')
         except ValueError:
@@ -55,10 +61,33 @@ class CurrencyConverter:
         except Exception as e:
             self.result_label.config(text=f'Error: {e}')
 
-    def _perform_conversion(self, from_currency, to_currency, amount):
-        c_rates = CurrencyRates()
-        rate = c_rates.get_rate(from_currency, to_currency)
-        return amount * rate
+    async def _perform_conversion(self, from_currency, to_currency, amount):
+        try:
+            rate = await self.get_forex_rate(from_currency, to_currency)
+            if rate is None:
+                raise Exception("Forex API servers are down")
+            return amount * rate
+        except Exception as e:
+            print(f"Error: {e}, now using easy_exchange_rates API as my rate")
+            api = API()
+            df = api.get_exchange_rates(
+                base_currency=from_currency, 
+                start_date="2024-03-12",
+                end_date="2024-04-21",
+                targets=[to_currency]
+            )
+            rate = df[to_currency].iloc[-1]
+            return amount * rate
+
+    async def get_forex_rate(self, from_currency, to_currency):
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(f"https://api.exchangerate-api.com/v4/latest/{from_currency}") as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data['rates'].get(to_currency)
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                return None
 
     def save_to_csv(self):
         try:
@@ -89,24 +118,25 @@ class CurrencyConverter:
 
 if __name__ == '__main__':
     CurrencyConverter()
+
     
-##Testing##
+#Testingas
 
 import unittest
 
 class TestStringMethods(unittest.TestCase):
 
     def test_upper(self):
-        self.assertEqual('foo'.upper(), 'FOO')
+        self.assertEqual('bruh'.upper(), 'BRUH')
 
     def test_isupper(self):
-        self.assertTrue('FOO'.isupper())
-        self.assertFalse('Foo'.isupper())
+        self.assertTrue('BRUH'.isupper())
+        self.assertFalse('bruh'.isupper())
 
     def test_split(self):
-        s = 'hello world'
-        self.assertEqual(s.split(), ['hello', 'world'])
-        # check that s.split fails when the separator is not a string
+        s = 'zdarova world'
+        self.assertEqual(s.split(), ['zdarova', 'world'])
+    
         with self.assertRaises(TypeError):
             s.split(2)
 
